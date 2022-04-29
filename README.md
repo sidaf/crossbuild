@@ -1,7 +1,7 @@
 # crossbuild
 Multiarch cross compiling environment
 
-[![actions](https://github.com/multiarch/crossbuild/actions/workflows/actions.yml/badge.svg)](https://github.com/multiarch/crossbuild/actions/workflows/actions.yml)
+[![actions](https://github.com/sidaf/crossbuild/actions/workflows/actions.yml/badge.svg)](https://github.com/sidaf/crossbuild/actions/workflows/actions.yml)
 
 This is a multiarch Docker build environment image.
 You can use this image to produce binaries for multiple architectures.
