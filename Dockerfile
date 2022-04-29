@@ -1,143 +1,202 @@
-FROM buildpack-deps:stretch-curl
-MAINTAINER Manfred Touron <m@42.am> (https://github.com/moul)
+FROM debian:bullseye-slim
+MAINTAINER Sidaf <sion.dafydd@gmail.com> (https://github.com/sidaf)
 
-# Install deps
-RUN set -x; echo "Starting image build for Debian Stretch" \
- && dpkg --add-architecture arm64                      \
- && dpkg --add-architecture armel                      \
- && dpkg --add-architecture armhf                      \
- && dpkg --add-architecture i386                       \
- && dpkg --add-architecture mips                       \
- && dpkg --add-architecture mipsel                     \
- && dpkg --add-architecture powerpc                    \
- && dpkg --add-architecture ppc64el                    \
+# Setup base debian system
+
+# temporarily disable dpkg fsync to make building faster.
+RUN if [ ! -e /etc/dpkg/dpkg.cfg.d/docker-apt-speedup ]; then         \
+      echo force-unsafe-io > /etc/dpkg/dpkg.cfg.d/docker-apt-speedup; \
+    fi
+
+# keep system compact, don't save downloaded packages
+RUN if [ ! -e /etc/apt/apt.conf.d/docker-clean ]; then         \
+      echo 'DPkg::Post-Invoke { "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin || true"; };' \
+    > /etc/apt/apt.conf.d/docker-clean && \
+      echo 'APT::Update::Post-Invoke { "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin || true"; };' \
+    >> /etc/apt/apt.conf.d/docker-clean && \
+      echo 'Dir::Cache::pkgcache ""; Dir::Cache::srcpkgcache "";' \
+    >> /etc/apt/apt.conf.d/docker-clean; \
+    fi
+
+# prevent initramfs updates from trying to run grub and lilo.
+ENV INITRD no
+
+# replace the 'ischroot' tool to make it always return true.
+# prevent initscripts updates from breaking /dev/shm.
+RUN dpkg-divert --local --rename --add /usr/bin/ischroot && \
+    ln -sf /bin/true /usr/bin/ischroot
+
+RUN set -x; \
+ DEBIAN_FRONTEND=noninteractive                        \
  && apt-get update                                     \
- && apt-get install -y -q                              \
+ && apt-get dist-upgrade --yes                         \
+ && apt-get install --yes -q --no-install-recommends   \
         autoconf                                       \
+        autogen                                        \
         automake                                       \
         autotools-dev                                  \
         bc                                             \
-        binfmt-support                                 \
-        binutils-multiarch                             \
-        binutils-multiarch-dev                         \
+        bison                                          \
         build-essential                                \
+        bzip2                                          \
+        ca-certificates                                \
         ccache                                         \
-        clang                                          \
-        crossbuild-essential-arm64                     \
-        crossbuild-essential-armel                     \
-        crossbuild-essential-armhf                     \
-        crossbuild-essential-mipsel                    \
-        crossbuild-essential-ppc64el                   \
         curl                                           \
-        devscripts                                     \
-        gdb                                            \
-        git-core                                       \
+        dirmngr                                        \
+        distcc                                         \
+        file                                           \
+        flex                                           \
+        gettext                                        \
+        gzip                                           \
+        gnupg                                          \
+        osslsigncode                                   \
+        libc-dev                                       \
+        libcurl4-gnutls-dev                            \
+        libexpat1-dev                                  \
+        libssl-dev                                     \
         libtool                                        \
-        llvm                                           \
-        mercurial                                      \
-        multistrap                                     \
-        patch                                          \
-        software-properties-common                     \
-        subversion                                     \
-        wget                                           \
-        xz-utils                                       \
-        cmake                                          \
-        qemu-user-static                               \
         libxml2-dev                                    \
         lzma-dev                                       \
-        openssl                                        \
-        libssl-dev                                     \
- && apt-get clean
-# FIXME: install gcc-multilib
-# FIXME: add mips and powerpc architectures
+        make                                           \
+        pkg-config                                     \
+        pax                                            \
+        python-is-python3                              \
+        python3-dev                                    \
+        python3-pip                                    \
+        patch                                          \
+        rsync                                          \
+        ssh                                            \
+        software-properties-common                     \
+        vim                                            \
+        wget                                           \
+        xz-utils                                       \
+        zip                                            \
+        zlib1g-dev                                     \
+ && apt-get clean autoclean --yes                      \
+ && apt-get autoremove --yes                           \
+ && rm -rf /var/lib/{apt,dpkg,cache,log}
 
+# Setup cross-compile environments
+
+WORKDIR /usr/src
+
+# Install gosu
+
+COPY assets/install-gosu-binary.sh assets/install-gosu-binary-wrapper.sh /buildscripts/
+RUN \
+  set -x && \
+  /buildscripts/install-gosu-binary.sh && \
+  /buildscripts/install-gosu-binary-wrapper.sh && \
+  rm -rf /buildscripts
+
+# Install git
+
+ARG GIT_VERSION=2.36.0
+COPY assets/build-and-install-git.sh /buildscripts/
+RUN /buildscripts/build-and-install-git.sh && \
+  rm -rf /buildscripts
+
+# Install cmake
+
+ARG CMAKE_VERSION=3.23.1
+COPY assets/build-and-install-cmake.sh /buildscripts/
+RUN /buildscripts/build-and-install-cmake.sh && \
+  rm -rf /buildscripts
+COPY assets/cmake.sh /usr/local/bin/cmake
+COPY assets/ccmake.sh /usr/local/bin/ccmake
+
+# Install custom bash prompt
+
+COPY assets/install-liquidprompt-binary.sh /buildscripts/
+RUN /buildscripts/install-liquidprompt-binary.sh && \
+  rm -rf /buildscripts
+
+# Install ninja
+
+COPY assets/install-python-packages.sh assets/build-and-install-ninja.sh /buildscripts/
+RUN PYTHON=$([ -e /opt/python/cp38-cp38/bin/python ] && echo "/opt/python/cp38-cp38/bin/python" || echo "python3") && \
+  /buildscripts/install-python-packages.sh -python ${PYTHON} && \
+  /buildscripts/build-and-install-ninja.sh -python ${PYTHON} && \
+  rm -rf /buildscripts
+
+# Install Linux cross-tools
+
+COPY assets/install-llvm-linux.sh /buildscripts/
+RUN LLVM_VERSION=14.0.0 INSTALL_DIR="/opt/llvm-linux/" /buildscripts/install-llvm-linux.sh && \
+  cp -lr /opt/llvm-linux /opt/llvm-macos && \
+  rm -rf /buildscripts
 
 # Install Windows cross-tools
-RUN apt-get install -y mingw-w64 \
- && apt-get clean
 
+COPY assets/install-llvm-mingw.sh /buildscripts/
+RUN /buildscripts/install-llvm-mingw.sh && \
+  rm -rf /buildscripts
 
-# Install OSx cross-tools
+# Install macOS cross-tools
 
-#Build arguments
-ARG osxcross_repo="tpoechtrager/osxcross"
-ARG osxcross_revision="542acc2ef6c21aeb3f109c03748b1015a71fed63"
-ARG darwin_sdk_version="10.10"
-ARG darwin_osx_version_min="10.6"
-ARG darwin_version="14"
-ARG darwin_sdk_url="https://www.dropbox.com/s/yfbesd249w10lpc/MacOSX${darwin_sdk_version}.sdk.tar.xz"
+COPY assets/install-llvm-macos.sh assets/install-llvm-linux.sh /buildscripts/
+RUN /buildscripts/install-llvm-macos.sh && \
+  rm -rf /buildscripts
 
-# ENV available in docker image
-ENV OSXCROSS_REPO="${osxcross_repo}"                   \
-    OSXCROSS_REVISION="${osxcross_revision}"           \
-    DARWIN_SDK_VERSION="${darwin_sdk_version}"         \
-    DARWIN_VERSION="${darwin_version}"                 \
-    DARWIN_OSX_VERSION_MIN="${darwin_osx_version_min}" \
-    DARWIN_SDK_URL="${darwin_sdk_url}"
+# Create symlinks for triples
 
-RUN mkdir -p "/tmp/osxcross"                                                                                   \
- && cd "/tmp/osxcross"                                                                                         \
- && curl -sLo osxcross.tar.gz "https://codeload.github.com/${OSXCROSS_REPO}/tar.gz/${OSXCROSS_REVISION}"  \
- && tar --strip=1 -xzf osxcross.tar.gz                                                                         \
- && rm -f osxcross.tar.gz                                                                                      \
- && curl -sLo tarballs/MacOSX${DARWIN_SDK_VERSION}.sdk.tar.xz                                                  \
-             "${DARWIN_SDK_URL}"                \
- && yes "" | SDK_VERSION="${DARWIN_SDK_VERSION}" OSX_VERSION_MIN="${DARWIN_OSX_VERSION_MIN}" ./build.sh                               \
- && mv target /usr/osxcross                                                                                    \
- && mv tools /usr/osxcross/                                                                                    \
- && ln -sf ../tools/osxcross-macports /usr/osxcross/bin/omp                                                    \
- && ln -sf ../tools/osxcross-macports /usr/osxcross/bin/osxcross-macports                                      \
- && ln -sf ../tools/osxcross-macports /usr/osxcross/bin/osxcross-mp                                            \
- && sed -i -e "s%exec cmake%exec /usr/bin/cmake%" /usr/osxcross/bin/osxcross-cmake                             \
- && rm -rf /tmp/osxcross                                                                                       \
- && rm -rf "/usr/osxcross/SDK/MacOSX${DARWIN_SDK_VERSION}.sdk/usr/share/man"
+ENV LINUX_TRIPLES=x86_64-linux-gnu,i686-linux-gnu
+ENV DARWIN_TRIPLES=x86_64h-apple-darwin20.4,x86_64-apple-darwin20.4
+ENV WINDOWS_TRIPLES=i686-w64-mingw32,x86_64-w64-mingw32
+ENV CROSS_TRIPLE=x86_64-linux-gnu
 
+COPY assets/toolchain.cmake /crossbuild/
+ENV CMAKE_TOOLCHAIN_FILE /crossbuild/toolchain.cmake
 
-# Create symlinks for triples and set default CROSS_TRIPLE
-ENV LINUX_TRIPLES=arm-linux-gnueabi,arm-linux-gnueabihf,aarch64-linux-gnu,mipsel-linux-gnu,powerpc64le-linux-gnu                  \
-    DARWIN_TRIPLES=x86_64h-apple-darwin${DARWIN_VERSION},x86_64-apple-darwin${DARWIN_VERSION},i386-apple-darwin${DARWIN_VERSION}  \
-    WINDOWS_TRIPLES=i686-w64-mingw32,x86_64-w64-mingw32                                                                           \
-    CROSS_TRIPLE=x86_64-linux-gnu
-COPY ./assets/osxcross-wrapper /usr/bin/osxcross-wrapper
-RUN mkdir -p /usr/x86_64-linux-gnu;                                                               \
-    for triple in $(echo ${LINUX_TRIPLES} | tr "," " "); do                                       \
-      for bin in /usr/bin/$triple-*; do                                                           \
-        if [ ! -f /usr/$triple/bin/$(basename $bin | sed "s/$triple-//") ]; then                  \
-          ln -s $bin /usr/$triple/bin/$(basename $bin | sed "s/$triple-//");                      \
-        fi;                                                                                       \
-      done;                                                                                       \
-      for bin in /usr/bin/$triple-*; do                                                           \
-        if [ ! -f /usr/$triple/bin/cc ]; then                                                     \
-          ln -s gcc /usr/$triple/bin/cc;                                                          \
-        fi;                                                                                       \
-      done;                                                                                       \
-    done &&                                                                                       \
-    for triple in $(echo ${DARWIN_TRIPLES} | tr "," " "); do                                      \
-      mkdir -p /usr/$triple/bin;                                                                  \
-      for bin in /usr/osxcross/bin/$triple-*; do                                                  \
-        ln /usr/bin/osxcross-wrapper /usr/$triple/bin/$(basename $bin | sed "s/$triple-//");      \
-      done &&                                                                                     \
-      rm -f /usr/$triple/bin/clang*;                                                              \
-      ln -s cc /usr/$triple/bin/gcc;                                                              \
-      ln -s /usr/osxcross/SDK/MacOSX${DARWIN_SDK_VERSION}.sdk/usr /usr/x86_64-linux-gnu/$triple;  \
-    done;                                                                                         \
-    for triple in $(echo ${WINDOWS_TRIPLES} | tr "," " "); do                                     \
-      mkdir -p /usr/$triple/bin;                                                                  \
-      for bin in /etc/alternatives/$triple-* /usr/bin/$triple-*; do                               \
-        if [ ! -f /usr/$triple/bin/$(basename $bin | sed "s/$triple-//") ]; then                  \
-          ln -s $bin /usr/$triple/bin/$(basename $bin | sed "s/$triple-//");                      \
-        fi;                                                                                       \
-      done;                                                                                       \
-      ln -s gcc /usr/$triple/bin/cc;                                                              \
-      ln -s /usr/$triple /usr/x86_64-linux-gnu/$triple;                                           \
+COPY assets/linux-wrapper assets/linux-emulator /opt/llvm-linux/bin/
+COPY assets/windows-wrapper assets/windows-emulator /opt/llvm-windows/bin/
+COPY assets/macos-wrapper assets/macos-emulator /opt/llvm-macos/bin/
+
+RUN \
+    mkdir -p /usr/x86_64-linux-gnu;                                                                          \
+    for triple in $(echo ${LINUX_TRIPLES} | tr "," " "); do                                                  \
+      mkdir -p /usr/$triple/bin &&                                                                             \
+      for bin in clang clang++ gcc g++ cc c99 c11 c++ as; do                                                 \
+          ln -sf /opt/llvm-linux/bin/linux-wrapper /opt/llvm-linux/bin/$triple-$bin;                         \
+      done &&                                                                                                  \
+      for bin in addr2line ar ranlib nm objcopy objdump readelf strings strip windres dlltool; do            \
+          ln -sf /opt/llvm-linux/bin/llvm-$bin /opt/llvm-linux/bin/$triple-$bin || true;                     \
+      done &&                                                                                                  \
+      ln -sf /opt/llvm-linux/bin/clang-cpp /usr/$triple/bin/cpp &&                                             \
+      ln -sf /opt/llvm-linux/bin/ld.lld /opt/llvm-linux/bin/$triple-ld &&                                      \
+      for bin in /opt/llvm-linux/bin/$triple-*; do                                                           \
+        ln -sf $bin /usr/$triple/bin/$(basename $bin | sed "s/$triple-//");                                  \
+      done &&                                                                                                  \
+      ln -s /usr/$triple /usr/x86_64-linux-gnu/$triple &&                                                      \
+      ln -sf /opt/llvm-linux/bin/linux-emulator /usr/$triple/bin/$triple-emulator;                           \
+    done &&                                                                                                  \
+    for triple in $(echo ${WINDOWS_TRIPLES} | tr "," " "); do                                                \
+      mkdir -p /usr/$triple/bin &&                                                                             \
+      for bin in /opt/llvm-windows/bin/$triple-*; do                                                         \
+        ln -f /opt/llvm-windows/bin/windows-wrapper /usr/$triple/bin/$(basename $bin | sed "s/$triple-//");  \
+      done &&                                                                                                  \
+      ln -s /usr/$triple /usr/x86_64-linux-gnu/$triple &&                                                      \
+      ln -sf /opt/llvm-windows/bin/clang-cpp /usr/$triple/bin/cpp &&                                           \
+      ln -sf /opt/llvm-windows/bin/windows-emulator /usr/$triple/bin/$triple-emulator;                       \
+    done &&                                                                                                  \
+    for triple in $(echo ${DARWIN_TRIPLES} | tr "," " "); do                                                 \  
+      mkdir -p /usr/$triple/bin;                                                                             \
+      for bin in /opt/llvm-macos/bin/$triple-*; do                                                           \
+        ln -f /opt/llvm-macos/bin/macos-wrapper /usr/$triple/bin/$(basename $bin | sed "s/$triple-//");      \
+      done &&                                                                                                  \
+      ln -sf /opt/llvm-macos/SDK/MacOSX11.3.sdk/usr /usr/x86_64-linux-gnu/$triple;                           \
+      for bin in gcc c99 c11; do                                                                             \
+        ln -sf /usr/$triple/bin/clang /usr/$triple/bin/$bin;                                                 \
+      done;                                                                                                  \
+      ln -sf /usr/$triple/bin/c++ /usr/$triple/bin/g++ &&                                                      \
+      ln -sf /opt/llvm-macos/bin/clang-cpp /usr/$triple/bin/cpp &&                                             \
+      ln -sf /opt/llvm-macos/bin/macos-emulator /usr/$triple/bin/$triple-emulator;                           \
     done
-# we need to use default clang binary to avoid a bug in osxcross that recursively call himself
-# with more and more parameters
 
-ENV LD_LIBRARY_PATH /usr/osxcross/lib:$LD_LIBRARY_PATH
+# Setup image entry scripts
 
-# Image metadata
-ENTRYPOINT ["/usr/bin/crossbuild"]
-CMD ["/bin/bash"]
-WORKDIR /workdir
-COPY ./assets/crossbuild /usr/bin/crossbuild
+COPY assets/entrypoint.sh assets/crossbuild.sh /crossbuild/
+
+RUN echo "root:root" | chpasswd
+WORKDIR /work
+ENTRYPOINT ["/crossbuild/entrypoint.sh"]
