@@ -1,3 +1,2 @@
 #!/bin/sh
-#exec /usr/bin/wine64
-/bin/true
+exec /usr/bin/wine64

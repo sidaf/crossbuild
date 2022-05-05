@@ -76,6 +76,28 @@ RUN set -x; \
  && apt-get autoremove --yes                           \
  && rm -rf /var/lib/{apt,dpkg,cache,log}
 
+# Wine
+RUN set -x; \
+    mkdir -p /usr/local/share/keyrings; \
+    curl --fail https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor > /usr/local/share/keyrings/winehq.gpg; \
+    echo "deb [signed-by=/usr/local/share/keyrings/winehq.gpg] https://dl.winehq.org/wine-builds/debian/ bullseye main" > /etc/apt/sources.list.d/winehq.list; \
+    dpkg --add-architecture i386;                      \
+ DEBIAN_FRONTEND=noninteractive                        \
+ && apt-get update                                     \
+ && apt-get dist-upgrade --yes                         \
+ && apt-get install --yes -q --no-install-recommends   \
+        winehq-stable                                  \
+ && apt-get clean autoclean --yes                      \
+ && apt-get autoremove --yes                           \
+ && rm -rf /var/lib/{apt,dpkg,cache,log}
+
+# Initialize the wine environment. Wait until the wineserver process has
+# exited before closing the session, to avoid corrupting the wine prefix.
+#RUN wine64 wineboot --init && while pgrep wineserver > /dev/null; do sleep 1; done
+
+# wine can be quite spammy with log messages and they're generally uninteresting
+ENV WINEDEBUG="-all"
+
 # Setup cross-compile environments
 
 WORKDIR /usr/src
