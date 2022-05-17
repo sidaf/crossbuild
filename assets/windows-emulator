@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /usr/bin/wine64
+exec /usr/bin/wine64 "$@"
