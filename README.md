@@ -26,6 +26,7 @@ To create a helper script for this image, run the following command substituting
 ```console
 docker run --rm sidaf/crossbuild > <target-triplet>-crossbuild
 chmod +x <target-triplet>-crossbuild
+./<target-triplet>-crossbuild cc helloworld.c -o helloworld
 ```
 
 You may then wish to move the "<target-triplet>-crossbuild" script to your PATH.
