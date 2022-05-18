@@ -21,7 +21,7 @@ i686-w64-mingw32       | win32                                |       |       | 
 
 ### Shorthand
 
-To create a helper script for this image, run the following command substituting "<target-triplet>" with the required target triplet or alias e.g. x86_64-w64-mingw32. This can be repeated for other target triplets / aliases.
+To create a helper script for this image, run the following command substituting `<target-triplet>` with the required target triplet or alias e.g. x86_64-w64-mingw32. This can be repeated for other target triplets / aliases.
 
 ```console
 docker run --rm sidaf/crossbuild > <target-triplet>-crossbuild
@@ -29,7 +29,7 @@ chmod +x <target-triplet>-crossbuild
 ./<target-triplet>-crossbuild cc helloworld.c -o helloworld
 ```
 
-You may then wish to move the "<target-triplet>-crossbuild" script to your PATH.
+You may then wish to move the `<target-triplet>-crossbuild` script to your PATH.
 
 ### Longhand
 
