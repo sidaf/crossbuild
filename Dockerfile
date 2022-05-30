@@ -46,6 +46,7 @@ RUN set -x; \
         distcc                                         \
         file                                           \
         flex                                           \
+        gdb                                            \
         gettext                                        \
         gzip                                           \
         gnupg                                          \
