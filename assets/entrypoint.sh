@@ -60,7 +60,7 @@ if [ -n "${CROSS_TRIPLE}" ]; then
     #export LD_LIBRARY_PATH="/usr/x86_64-linux-gnu/${CROSS_TRIPLE}/lib:${LD_LIBRARY_PATH_ORIGIN}"
     export LD_LIBRARY_PATH="${CROSS_ROOT}/lib:${LD_LIBRARY_PATH_ORIGIN}"
 
-    export AS=/usr/${CROSS_TRIPLE}/bin/as
+    export AS="/usr/${CROSS_TRIPLE}/bin/clang -c -x assembler -Wno-unused-command-line-argument"
     export AR=/usr/${CROSS_TRIPLE}/bin/ar
     export CC=/usr/${CROSS_TRIPLE}/bin/clang
     export CPP=/usr/${CROSS_TRIPLE}/bin/cpp

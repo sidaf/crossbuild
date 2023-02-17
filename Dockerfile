@@ -114,14 +114,14 @@ RUN \
 
 # Install git
 
-ARG GIT_VERSION=2.36.0
+ARG GIT_VERSION=2.39.2
 COPY assets/build-and-install-git.sh /buildscripts/
 RUN /buildscripts/build-and-install-git.sh && \
   rm -rf /buildscripts
 
 # Install cmake
 
-ARG CMAKE_VERSION=3.23.1
+ARG CMAKE_VERSION=3.25.2
 COPY assets/build-and-install-cmake.sh /buildscripts/
 RUN /buildscripts/build-and-install-cmake.sh && \
   rm -rf /buildscripts
@@ -136,6 +136,7 @@ RUN /buildscripts/install-liquidprompt-binary.sh && \
 
 # Install ninja
 
+ARG NINJA_VERSION=v1.11.1
 COPY assets/install-python-packages.sh assets/build-and-install-ninja.sh /buildscripts/
 RUN PYTHON=$([ -e /opt/python/cp38-cp38/bin/python ] && echo "/opt/python/cp38-cp38/bin/python" || echo "python3") && \
   /buildscripts/install-python-packages.sh -python ${PYTHON} && \
